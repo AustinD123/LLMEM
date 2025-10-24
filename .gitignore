@@ -1,0 +1,36 @@
+# .gitignore
+
+# Python virtual environment (common names)
+.venv/
+venv/
+env/
+
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyd
+*.so
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# IDE and Editor files
+.idea/      # PyCharm/IntelliJ
+*.swp       # vim
+.vscode/    # VS Code settings (if not shared)
+
+# OS and Thumbnails
+.DS_Store
+Thumbs.db
+
+# --- Backend Application Specific ---
+
+# 1. Critical: Environment variables
+# This is the file that contains your API keys (e.g., GROQ_API_KEY)
+.env
+
+# 2. ChromaDB Persistence Directory
+# This directory contains the vector database, which should not be committed.
+# (Based on the default setting from memory_store.py)
+/chroma_db/
