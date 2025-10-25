@@ -14,6 +14,11 @@ from .groq_client import generate_llm_response_stream, count_tokens
 
 # --- FastAPI Setup ---
 app = FastAPI(title="LLM Memory Layer API", version="1.0")
+origins = [
+    "http://localhost:3000", # Add your frontend's URL/port here
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
 
 # Allow CORS for simple frontend development
 app.add_middleware(
@@ -158,7 +163,8 @@ async def chat_handler(request: ChatRequest):
         first_chunk = ChatResponseChunk(
             retrieved_memories=retrieved_memories
         )
-        yield f"data: {first_chunk.json()}\n\n"
+        # FIX: Removed manual 'data: ' prefix. EventSourceResponse handles the prefixing.
+        yield f"{first_chunk.json()}\n\n" 
         
         full_ai_response = ""
         
@@ -175,18 +181,21 @@ async def chat_handler(request: ChatRequest):
                 if content_chunk.startswith('{"error":'):
                     error_data = json.loads(content_chunk)
                     error_chunk = ChatResponseChunk(error=error_data.get('error', 'Unknown LLM Error'))
-                    yield f"data: {error_chunk.json()}\n\n"
+                    # FIX: Removed manual 'data: ' prefix.
+                    yield f"{error_chunk.json()}\n\n" 
                     break # Stop streaming on error
                 
                 # Normal text chunk
                 full_ai_response += content_chunk
                 response_chunk = ChatResponseChunk(text=content_chunk)
-                yield f"data: {response_chunk.json()}\n\n"
+                # FIX: Removed manual 'data: ' prefix.
+                yield f"{response_chunk.json()}\n\n"
         
         except Exception as e:
             print(f"Streaming Error: {e}")
             error_chunk = ChatResponseChunk(error=f"Streaming failed: {e}")
-            yield f"data: {error_chunk.json()}\n\n"
+            # FIX: Removed manual 'data: ' prefix.
+            yield f"{error_chunk.json()}\n\n"
         
         finally:
             # --- 4. Store LLM Response ---
@@ -195,7 +204,8 @@ async def chat_handler(request: ChatRequest):
             
             # --- 5. Final Chunk ---
             final_chunk = ChatResponseChunk(is_complete=True)
-            yield f"data: {final_chunk.json()}\n\n"
+            # FIX: Removed manual 'data: ' prefix.
+            yield f"{final_chunk.json()}\n\n"
 
     # EventSourceResponse handles the SSE streaming protocol
     return EventSourceResponse(event_generator())
