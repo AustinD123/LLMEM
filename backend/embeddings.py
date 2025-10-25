@@ -1,16 +1,15 @@
 import os
 from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
-import torch # We'll need torch to check the object type
+import torch
+import numpy as np # Adding NumPy import for explicit conversion handling
 
 # Load environment variables
 load_dotenv()
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
-# Initialize the model globally (NO CHANGE HERE)
+# Initialize the model globally
 try:
-    # Set the device explicitly to 'cpu' or 'cuda' for testing.
-    # We will let the library decide, but add conversion logic below.
     EMBEDDER = SentenceTransformer(EMBEDDING_MODEL)
     print(f"Embedding Model Loaded: {EMBEDDING_MODEL}")
 except Exception as e:
@@ -19,27 +18,27 @@ except Exception as e:
 
 
 def generate_embedding(text: str) -> list[float]:
-    """Generates a vector embedding for a given text, ensuring output is a Python list of floats."""
+    """
+    Generates a vector embedding for a given text, explicitly forcing the output 
+    to a stable NumPy array before converting it to the required Python list of floats
+    for ChromaDB.
+    """
     if EMBEDDER is None:
         raise RuntimeError("Embedding model failed to load.")
 
-    # Generate the embedding. We use the default setting (which often returns a NumPy array).
-    # If the output is a tensor (as indicated by your error), the subsequent logic handles it.
+    # --- 💡 CRITICAL FIX FOR LOW SIMILARITY SCORE ---
+    # We explicitly request the output as a NumPy array (convert_to_numpy=True).
+    # This bypasses potential issues where the output might be an incompatible PyTorch 
+    # tensor stored on a GPU/CPU when ChromaDB expects a simple list of floats.
     embedding = EMBEDDER.encode(
         text, 
-        convert_to_numpy=False, 
+        convert_to_numpy=True,  # Force NumPy array output for stability
         convert_to_tensor=False
     )
 
-    # --- 💡 CRITICAL FIXES FOR CHROMADB COMPATIBILITY ---
-    if isinstance(embedding, torch.Tensor):
-        # 1. Move the tensor from CUDA device to CPU
-        # 2. Convert the tensor to a NumPy array
-        # 3. Convert the NumPy array to a Python list of floats (ChromaDB requirement)
-        embedding = embedding.cpu().numpy().tolist()
-    elif hasattr(embedding, 'tolist'):
-        # If the output is a NumPy array, convert it to a list
-        embedding = embedding.tolist()
+    # Convert the NumPy array (or any object with a .tolist() method) directly to a Python list
+    if hasattr(embedding, 'tolist'):
+        return embedding.tolist()
     
-    # ChromaDB expects a list of floats. The .tolist() method ensures this.
-    return embedding
+    # Fallback to ensure a list is returned
+    return list(embedding)

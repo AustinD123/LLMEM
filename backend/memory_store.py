@@ -32,7 +32,14 @@ class StoredMemory(BaseModel):
 try:
     # Persistent client to save data to disk
     CLIENT = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
-    COLLECTION = CLIENT.get_or_create_collection(name=COLLECTION_NAME)
+    
+    # --- FIX: Explicitly set the distance metric to cosine ---
+    COLLECTION = CLIENT.get_or_create_collection(
+        name=COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"} # Forces cosine distance for similarity calculations
+    )
+    # --- END FIX ---
+    
     print(f"ChromaDB initialized. Data saved to: {CHROMA_PERSIST_DIR}")
 except Exception as e:
     print(f"Error initializing ChromaDB: {e}")
@@ -86,17 +93,20 @@ def search_memories(
 def clear_memories() -> bool:
     """Removes all data from the memory collection."""
     
-    # FIX: Declare global COLLECTION immediately.
-    global COLLECTION 
+    global COLLECTION # Necessary to reassign the global collection variable
     
-    if COLLECTION is None:
-        print("ChromaDB is not initialized, cannot clear.")
+    if CLIENT is None:
+        print("ChromaDB client is not initialized.")
         return False
         
     try:
-        # Recreate the collection to clear all data
+        # Delete and recreate the collection to clear all data safely
         CLIENT.delete_collection(name=COLLECTION_NAME)
-        COLLECTION = CLIENT.get_or_create_collection(name=COLLECTION_NAME)
+        # Re-initialize the collection, ensuring the cosine metric is kept
+        COLLECTION = CLIENT.get_or_create_collection(
+            name=COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"}
+        )
         print("Memory store cleared successfully.")
         return True
     except Exception as e:
@@ -110,13 +120,16 @@ def get_all_memories() -> List[Dict[str, Any]]:
     
     try:
         # Get all memories (limit can be adjusted for very large dbs)
-        count = COLLECTION.count()
+        # Fetching all IDs and then passing them to .get() is reliable
+        all_ids = COLLECTION.get(include=[])['ids'] 
+        
         results = COLLECTION.get(
-            ids=COLLECTION.get()['ids'], # A way to get all IDs
+            ids=all_ids,
             include=['documents', 'metadatas']
         )
         
         memories = []
+        # Use results['ids'] afor iteration to ensure consistency
         for doc, meta in zip(results['documents'], results['metadatas']):
             memories.append({"text": doc, "metadata": meta})
             

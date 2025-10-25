@@ -39,16 +39,18 @@ def generate_llm_response_stream(
     context_text = "\n".join([f"- {m['text']} (Source: {m['metadata'].get('message_type')}, Sim: {m.get('similarity_score', 'N/A'):.4f})" 
                               for m in retrieved_context])
     
+    # --- FIX: Updated System Prompt for Name Conflict ---
     system_prompt = (
-        "You are a helpful and friendly assistant. Your goal is to answer the user's "
-        "query based on the provided context and conversation history. "
-        "If the context is relevant, use it. If not, answer based on your general knowledge. "
-        "The retrieved context below comes from past messages. Use the past conversation "
-        "to maintain flow and coherence.\n\n"
+        "You are a helpful and friendly digital assistant. **Do not introduce yourself by name.** "
+        "Your primary function is to use the **RETRIEVED CONTEXT** below for factual information "
+        "about the user (such as their name) or past events. Prioritize facts from this context. "
+        "If the context contains the user's name, use it to personalize the response. "
+        "If the context is not relevant, answer based on your general knowledge. Use the conversation history for flow.\n\n"
         "--- RETRIEVED CONTEXT ---\n"
         f"{context_text if context_text else 'No relevant memory found.'}\n"
         "-------------------------\n"
     )
+    # --- END FIX ---
 
     # 2. Build the Message List
     messages = [

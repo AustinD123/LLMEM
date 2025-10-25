@@ -8,9 +8,20 @@ from typing import List, Dict, Any, Optional
 from sse_starlette.sse import EventSourceResponse
 
 # Import local modules
-from . import memory_store
-from .embeddings import generate_embedding
-from .groq_client import generate_llm_response_stream, count_tokens
+# Assuming these modules exist in the same package structure
+try:
+    from . import memory_store
+    from .embeddings import generate_embedding
+    from .groq_client import generate_llm_response_stream, count_tokens
+except ImportError:
+    # Fallback for environments where local imports might fail
+    import memory_store
+    import embeddings
+    import groq_client
+    generate_embedding = embeddings.generate_embedding
+    generate_llm_response_stream = groq_client.generate_llm_response_stream
+    count_tokens = groq_client.count_tokens
+
 
 # --- FastAPI Setup ---
 app = FastAPI(title="LLM Memory Layer API", version="1.0")
@@ -39,7 +50,7 @@ class ChatRequest(BaseModel):
     history: List[Dict[str, str]] 
     # Settings
     top_k: int = 5
-    similarity_threshold: float = 0.6 # Cosine distance (1.0 - similarity)
+    similarity_threshold: float = 0.1 # Cosine distance (1.0 - similarity)
 
 class RetrievedMemory(BaseModel):
     """Schema for a retrieved memory item."""
@@ -131,7 +142,7 @@ async def chat_handler(request: ChatRequest):
     2. Searches ChromaDB for relevant memories.
     3. Calls Groq LLM with a RAG-enhanced system prompt.
     4. Streams the response.
-    5. Stores user query and LLM response as new memories.
+    5. Stores only the LLM response as a new memory.
     """
     user_query = request.user_query
     conv_id = request.conversation_id
@@ -139,9 +150,9 @@ async def chat_handler(request: ChatRequest):
     threshold = request.similarity_threshold
 
     # --- 1. Store User Query ---
-    # Store the user's message *before* retrieval for simple history tracking.
-    # Note: We store it here, but it won't be retrieved for THIS query.
-    await store_message(user_query, conv_id, "user")
+    # REMOVED: Storing the user query as a vector memory. 
+    # User queries are not helpful long-term facts and cause self-retrieval issues.
+    # We only rely on conversation_history for short-term context now.
     
     # --- 2. Retrieve Relevant Context ---
     try:
@@ -163,7 +174,7 @@ async def chat_handler(request: ChatRequest):
         first_chunk = ChatResponseChunk(
             retrieved_memories=retrieved_memories
         )
-        # FIX: Removed manual 'data: ' prefix. EventSourceResponse handles the prefixing.
+        # EventSourceResponse handles the 'data: ' prefix
         yield f"{first_chunk.json()}\n\n" 
         
         full_ai_response = ""
@@ -181,30 +192,27 @@ async def chat_handler(request: ChatRequest):
                 if content_chunk.startswith('{"error":'):
                     error_data = json.loads(content_chunk)
                     error_chunk = ChatResponseChunk(error=error_data.get('error', 'Unknown LLM Error'))
-                    # FIX: Removed manual 'data: ' prefix.
                     yield f"{error_chunk.json()}\n\n" 
                     break # Stop streaming on error
                 
                 # Normal text chunk
                 full_ai_response += content_chunk
                 response_chunk = ChatResponseChunk(text=content_chunk)
-                # FIX: Removed manual 'data: ' prefix.
                 yield f"{response_chunk.json()}\n\n"
         
         except Exception as e:
             print(f"Streaming Error: {e}")
             error_chunk = ChatResponseChunk(error=f"Streaming failed: {e}")
-            # FIX: Removed manual 'data: ' prefix.
             yield f"{error_chunk.json()}\n\n"
         
         finally:
             # --- 4. Store LLM Response ---
+            # IMPORTANT: We only store the ASSISTANT's response, as this holds the fact.
             if full_ai_response:
                 await store_message(full_ai_response, conv_id, "assistant")
             
             # --- 5. Final Chunk ---
             final_chunk = ChatResponseChunk(is_complete=True)
-            # FIX: Removed manual 'data: ' prefix.
             yield f"{final_chunk.json()}\n\n"
 
     # EventSourceResponse handles the SSE streaming protocol
